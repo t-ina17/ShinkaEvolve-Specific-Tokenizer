@@ -25,7 +25,7 @@
 
 ### Amazon ESCI-data（日本語のみで検証）
 
-ECSI-dataをcloneしたディレクトリ（この環境では `/Users/tina/work/study/sakana-ai/prod/data/esci-data`）を `--data_path` に渡します。
+ECSI-dataをcloneしたディレクトリを `--data_path` に渡します。
 
 ※ Parquet読み込みのため `pyarrow` が必要です。未導入なら `uv pip install pyarrow`。
 
