@@ -1,11 +1,22 @@
-"""Evaluator for specific-tokenizer example.
+"""specific-tokenizer 用の評価スクリプト。
 
-- Supports two dataset inputs:
-    - Simple CSV (sample/own data)
-    - Amazon ESCI Shopping Queries Dataset root directory
-        (expects shopping_queries_dataset/*.parquet)
-- Calls candidate program's run_experiment(examples, ndcg_k)
-- Uses run_shinka_eval to isolate program execution
+このディレクトリの `initial.py`（Jaccard ベースの初期個体）を評価するためのスクリプトです。
+
+対応する入力データ
+- CSV（手元サンプル/独自データ）
+- Amazon ESCI Shopping Queries Dataset（ESCI-data）のリポジトリルート
+    - `shopping_queries_dataset/*.parquet` を想定
+
+評価の流れ
+- 対象プログラム（initial.py / best/main.py など）から `run_experiment(examples, ndcg_k)` を呼ぶ
+- 実行は `run_shinka_eval` でサンドボックス化し、結果を `metrics.json` に集約する
+
+出力
+- `<results_dir>/metrics.json` : 公開用メトリクス
+- `<results_dir>/extra.json`   : 追加診断（token など、プログラムが返した dict 全体）
+
+注意
+- 実装は `examples/specific-tokenizer/evaluate.py` をベースにしており、互換のI/Fを維持しています。
 """
 
 from __future__ import annotations
@@ -22,10 +33,22 @@ from typing import Any, Dict, List, Optional, Tuple
 from shinka.core import run_shinka_eval
 
 
+Example = Dict[str, Any]
+RunOutput = Dict[str, Any]
+Metrics = Dict[str, Any]
+
+
 def _load_csv_examples(
     data_path: str,
     max_rows: Optional[int] = None,
-) -> List[dict]:
+) -> List[Example]:
+    """CSVから評価用の行データを読み込む。
+
+CSV列の例
+- query / product（または product_title）
+- label（任意: 数値。無い場合は教師なし評価になる）
+- query_id（任意。無い場合は query 文字列を代用）
+"""
     with open(data_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = []
@@ -66,6 +89,7 @@ def _load_csv_examples(
 
 
 def _pick_product_text(row: dict, product_text_fields: str) -> str:
+    """ESCIの product テキストを、設定に応じて1本の文字列にまとめる。"""
     title = (row.get("product_title") or "").strip()
     brand = (row.get("product_brand") or "").strip()
     color = (row.get("product_color") or "").strip()
@@ -86,6 +110,7 @@ def _pick_product_text(row: dict, product_text_fields: str) -> str:
 
 
 def _esci_label_to_relevance(esci_label: Optional[str]) -> Optional[float]:
+    """ESCIラベル（E/S/C/I）を NDCG 用の関連度スコアへ変換する。"""
     if esci_label is None:
         return None
     label = str(esci_label).strip().upper()
@@ -110,11 +135,11 @@ def _load_esci_examples(
     max_products_per_query: Optional[int] = None,
     seed: int = 42,
     product_text_fields: str = "title",
-) -> List[dict]:
-    """Load Amazon ESCI Shopping Queries dataset and return examples list.
+) -> List[Example]:
+    """ESCI-data から評価用の example を作る。
 
-    esci_root should point to the repository root containing `shopping_queries_dataset/`.
-    """
+`esci_root` は `shopping_queries_dataset/` を含むディレクトリ（リポジトリルート）を指す。
+"""
     try:
         import pandas as pd  # type: ignore[import-not-found]
     except Exception as e:
@@ -196,7 +221,7 @@ def _load_esci_examples(
     if max_rows is not None and max_rows > 0:
         df = df.head(max_rows)
 
-    records: List[dict] = []
+    records: List[Example] = []
     for _, row in df.iterrows():
         row_d = row.to_dict()
         query = str(row_d.get("query") or "").strip()
@@ -233,7 +258,8 @@ def _load_examples_auto(
     max_products_per_query: Optional[int],
     seed: int,
     product_text_fields: str,
-) -> List[dict]:
+) -> List[Example]:
+    """`--dataset` と `data_path` から入力形式を決めて読み込む。"""
     p = Path(data_path)
     ds = dataset.strip().lower()
     if ds == "auto":
@@ -259,7 +285,8 @@ def _load_examples_auto(
     raise ValueError("--dataset must be auto|csv|esci")
 
 
-def validate_output(run_output: dict) -> Tuple[bool, Optional[str]]:
+def validate_output(run_output: RunOutput) -> Tuple[bool, Optional[str]]:
+    """対象プログラムが返す dict（run_experimentの戻り値）を検証する。"""
     if not isinstance(run_output, dict):
         return False, "run_experiment must return a dict"
 
@@ -276,7 +303,8 @@ def validate_output(run_output: dict) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def aggregate(results: List[dict], results_dir: str) -> Dict[str, Any]:
+def aggregate(results: List[RunOutput], results_dir: str) -> Metrics:
+    """`run_shinka_eval` の生結果を、論文/可視化で扱いやすい形に集約する。"""
     if not results:
         return {"combined_score": 0.0, "public": {}, "private": {"error": "no_results"}}
 
@@ -291,17 +319,11 @@ def aggregate(results: List[dict], results_dir: str) -> Dict[str, Any]:
         "ndcg_k": out.get("ndcg_k"),
     }
 
-    # Optional extra diagnostics (e.g., Sudachi POS candidate selection)
-    if "sudachi_used_rows" in out:
-        public["sudachi_used_rows"] = out.get("sudachi_used_rows")
-    if "pos_allowlist_counts" in out:
-        public["pos_allowlist_counts"] = out.get("pos_allowlist_counts")
-
     preview = out.get("preview")
     if isinstance(preview, list):
         public["preview"] = preview[:5]
 
-    metrics = {
+    metrics: Metrics = {
         "combined_score": score,
         "public": public,
         "private": {},
@@ -318,45 +340,64 @@ def aggregate(results: List[dict], results_dir: str) -> Dict[str, Any]:
     return metrics
 
 
-def main(
-    program_path: str,
-    results_dir: str,
-    data_path: str,
-    dataset: str,
-    max_rows: Optional[int],
-    ndcg_k: int,
-    esci_locale: str,
-    esci_split: str,
-    esci_version: str,
-    max_queries: Optional[int],
-    max_products_per_query: Optional[int],
-    seed: int,
-    product_text_fields: str,
-):
-    os.makedirs(results_dir, exist_ok=True)
+def _parse_args() -> argparse.Namespace:
+    """CLI 引数を定義してパースする。"""
+    parser = argparse.ArgumentParser(description="Evaluate tokenizer match fitness")
+    parser.add_argument("--program_path", type=str, default="initial.py")
+    parser.add_argument("--results_dir", type=str, default="results")
+    parser.add_argument("--data_path", type=str, required=True)
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="auto",
+        help="auto|csv|esci. If data_path is a directory, auto assumes esci.",
+    )
+    parser.add_argument("--max_rows", type=int, default=None)
+    parser.add_argument("--max_queries", type=int, default=200)
+    parser.add_argument("--max_products_per_query", type=int, default=40)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--ndcg_k", type=int, default=10)
+
+    # ESCI options (used when --dataset esci)
+    parser.add_argument("--esci_locale", type=str, default="jp")
+    parser.add_argument("--esci_split", type=str, default="train")
+    parser.add_argument("--esci_version", type=str, default="small")
+    parser.add_argument(
+        "--product_text_fields",
+        type=str,
+        default="title",
+        help="title|title_brand|all",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    """CLI エントリポイント。"""
+    args = _parse_args()
+    os.makedirs(args.results_dir, exist_ok=True)
 
     examples = _load_examples_auto(
-        data_path=data_path,
-        dataset=dataset,
-        max_rows=max_rows,
-        esci_locale=esci_locale,
-        esci_split=esci_split,
-        esci_version=esci_version,
-        max_queries=max_queries,
-        max_products_per_query=max_products_per_query,
-        seed=seed,
-        product_text_fields=product_text_fields,
+        data_path=args.data_path,
+        dataset=args.dataset,
+        max_rows=args.max_rows,
+        esci_locale=args.esci_locale,
+        esci_split=args.esci_split,
+        esci_version=args.esci_version,
+        max_queries=args.max_queries,
+        max_products_per_query=args.max_products_per_query,
+        seed=args.seed,
+        product_text_fields=args.product_text_fields,
     )
 
     def get_kwargs(_run_index: int) -> Dict[str, Any]:
-        return {"examples": examples, "ndcg_k": ndcg_k}
+        return {"examples": examples, "ndcg_k": int(args.ndcg_k)}
 
     def agg_with_context(r: List[dict]) -> Dict[str, Any]:
-        return aggregate(r, results_dir=results_dir)
+        return aggregate(r, results_dir=args.results_dir)
 
     metrics, correct, error_msg = run_shinka_eval(
-        program_path=program_path,
-        results_dir=results_dir,
+        program_path=args.program_path,
+        results_dir=args.results_dir,
         experiment_fn_name="run_experiment",
         num_runs=1,
         get_experiment_kwargs=get_kwargs,
@@ -372,45 +413,4 @@ def main(
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Evaluate tokenizer match fitness")
-    p.add_argument("--program_path", type=str, default="initial.py")
-    p.add_argument("--results_dir", type=str, default="results")
-    p.add_argument("--data_path", type=str, required=True)
-    p.add_argument(
-        "--dataset",
-        type=str,
-        default="auto",
-        help="auto|csv|esci. If data_path is a directory, auto assumes esci.",
-    )
-    p.add_argument("--max_rows", type=int, default=None)
-    p.add_argument("--max_queries", type=int, default=200)
-    p.add_argument("--max_products_per_query", type=int, default=40)
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--ndcg_k", type=int, default=10)
-
-    # ESCI options (used when --dataset esci)
-    p.add_argument("--esci_locale", type=str, default="jp")
-    p.add_argument("--esci_split", type=str, default="train")
-    p.add_argument("--esci_version", type=str, default="small")
-    p.add_argument(
-        "--product_text_fields",
-        type=str,
-        default="title",
-        help="title|title_brand|all",
-    )
-    args = p.parse_args()
-    main(
-        program_path=args.program_path,
-        results_dir=args.results_dir,
-        data_path=args.data_path,
-        dataset=args.dataset,
-        max_rows=args.max_rows,
-        ndcg_k=args.ndcg_k,
-        esci_locale=args.esci_locale,
-        esci_split=args.esci_split,
-        esci_version=args.esci_version,
-        max_queries=args.max_queries,
-        max_products_per_query=args.max_products_per_query,
-        seed=args.seed,
-        product_text_fields=args.product_text_fields,
-    )
+    main()
