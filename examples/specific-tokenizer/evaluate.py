@@ -44,11 +44,11 @@ def _load_csv_examples(
 ) -> List[Example]:
     """CSVから評価用の行データを読み込む。
 
-CSV列の例
-- query / product（または product_title）
-- label（任意: 数値。無い場合は教師なし評価になる）
-- query_id（任意。無い場合は query 文字列を代用）
-"""
+    CSV列の例
+    - query / product（または product_title）
+    - label（任意: 数値。無い場合は教師なし評価になる）
+    - query_id（任意。無い場合は query 文字列を代用）
+    """
     with open(data_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         rows = []
@@ -138,8 +138,8 @@ def _load_esci_examples(
 ) -> List[Example]:
     """ESCI-data から評価用の example を作る。
 
-`esci_root` は `shopping_queries_dataset/` を含むディレクトリ（リポジトリルート）を指す。
-"""
+    `esci_root` は `shopping_queries_dataset/` を含むディレクトリ（リポジトリルート）を指す。
+    """
     try:
         import pandas as pd  # type: ignore[import-not-found]
     except Exception as e:
@@ -202,7 +202,9 @@ def _load_esci_examples(
         raise ValueError("--split must be 'train' or 'test'")
 
     # Basic cleanup
-    df = df.dropna(subset=["query", "product_title", "query_id", "product_id"], how="any")
+    df = df.dropna(
+        subset=["query", "product_title", "query_id", "product_id"], how="any"
+    )
 
     # Optionally sample queries for speed
     rng = random.Random(seed)
@@ -216,7 +218,11 @@ def _load_esci_examples(
         # Deterministic shuffle within each query
         df = df.copy()
         df["__rand"] = [rng.random() for _ in range(len(df))]
-        df = df.sort_values(["query_id", "__rand"]).groupby("query_id").head(max_products_per_query)
+        df = (
+            df.sort_values(["query_id", "__rand"])
+            .groupby("query_id")
+            .head(max_products_per_query)
+        )
 
     if max_rows is not None and max_rows > 0:
         df = df.head(max_rows)
@@ -226,7 +232,9 @@ def _load_esci_examples(
         row_d = row.to_dict()
         query = str(row_d.get("query") or "").strip()
         qid = str(row_d.get("query_id") or "").strip()
-        product_text = _pick_product_text(row_d, product_text_fields=product_text_fields).strip()
+        product_text = _pick_product_text(
+            row_d, product_text_fields=product_text_fields
+        ).strip()
         if not query or not qid or not product_text:
             continue
 

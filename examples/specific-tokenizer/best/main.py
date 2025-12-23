@@ -29,6 +29,7 @@ _SYNONYM_PATTERNS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\btype[-\s]?c\b", flags=re.IGNORECASE), "usb c"),
 ]
 
+
 def _apply_synonyms(s: str) -> str:
     for pat, repl in _SYNONYM_PATTERNS:
         s = pat.sub(repl, s)
@@ -54,7 +55,7 @@ def _char_ngrams(token: str, n: int) -> List[str]:
     """Return character n‑grams of a single token (n ≥ 2)."""
     if len(token) < n:
         return []
-    return [token[i:i + n] for i in range(len(token) - n + 1)]
+    return [token[i : i + n] for i in range(len(token) - n + 1)]
 
 
 def tokenize(text: str) -> List[str]:
@@ -132,8 +133,10 @@ def _tfidf_vector(tf: Dict[str, int]) -> Tuple[Dict[str, float], float]:
 
 
 def _cosine_similarity(
-    vec_a: Dict[str, float], norm_a: float,
-    vec_b: Dict[str, float], norm_b: float,
+    vec_a: Dict[str, float],
+    norm_a: float,
+    vec_b: Dict[str, float],
+    norm_b: float,
 ) -> float:
     """Sparse cosine similarity."""
     if norm_a == 0.0 or norm_b == 0.0:
@@ -175,10 +178,16 @@ def _tf_jaccard(q_tokens: List[str], p_tokens: List[str]) -> float:
 _ALPHA = 0.7  # weight for cosine; (1‑α) for Jaccard
 
 
-def _hybrid_score(query: str, product: str,
-                  q_vec: Dict[str, float], q_norm: float,
-                  p_vec: Dict[str, float], p_norm: float,
-                  q_tokens: List[str], p_tokens: List[str]) -> float:
+def _hybrid_score(
+    query: str,
+    product: str,
+    q_vec: Dict[str, float],
+    q_norm: float,
+    p_vec: Dict[str, float],
+    p_norm: float,
+    q_tokens: List[str],
+    p_tokens: List[str],
+) -> float:
     # 1️⃣ cosine similarity (TF‑IDF)
     cos = _cosine_similarity(q_vec, q_norm, p_vec, p_norm)
 
@@ -210,6 +219,7 @@ def _hybrid_score(query: str, product: str,
 _PRODUCT_TOKENS: Dict[int, List[str]] = {}
 _PRODUCT_VECTORS: Dict[int, Tuple[Dict[str, float], float]] = {}
 
+
 def score_match(query: str, product: str) -> float:
     """Public entry – computes hybrid similarity."""
     # In a single‑pair call (outside run_experiment) fall back to baseline TF‑Jaccard.
@@ -233,10 +243,9 @@ def score_match(query: str, product: str) -> float:
         p_tokens = _PRODUCT_TOKENS[prod_id]
         p_vec, p_norm = _PRODUCT_VECTORS[prod_id]
 
-    return _hybrid_score(query, product,
-                         q_vec, q_norm,
-                         p_vec, p_norm,
-                         q_tokens, p_tokens)
+    return _hybrid_score(
+        query, product, q_vec, q_norm, p_vec, p_norm, q_tokens, p_tokens
+    )
 
 
 def score_match_with_meta(query: str, product: str) -> Tuple[float, dict]:
@@ -256,10 +265,9 @@ def score_match_with_meta(query: str, product: str) -> Tuple[float, dict]:
         p_tokens = _PRODUCT_TOKENS[prod_id]
         p_vec, p_norm = _PRODUCT_VECTORS[prod_id]
 
-    score = _hybrid_score(query, product,
-                         q_vec, q_norm,
-                         p_vec, p_norm,
-                         q_tokens, p_tokens)
+    score = _hybrid_score(
+        query, product, q_vec, q_norm, p_vec, p_norm, q_tokens, p_tokens
+    )
 
     meta = {"q_tokens": q_tokens[:20], "p_tokens": p_tokens[:20]}
     return float(score), meta

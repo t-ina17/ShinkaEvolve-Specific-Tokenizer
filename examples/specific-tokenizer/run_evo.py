@@ -1,4 +1,3 @@
-```python
 #!/usr/bin/env python3
 
 """jaccard-tokenizer の進化実行スクリプト。
@@ -62,9 +61,12 @@ High-impact ideas
 - Downweight noisy tokens, upweight exact matches for short queries
 """
 
+
 def _parse_args() -> argparse.Namespace:
     """CLI 引数をパースして返す。"""
-    parser = argparse.ArgumentParser(description="Run ShinkaEvolve evolution for jaccard-tokenizer")
+    parser = argparse.ArgumentParser(
+        description="Run ShinkaEvolve evolution for jaccard-tokenizer"
+    )
     parser.add_argument(
         "--init_program_path",
         type=str,
@@ -101,6 +103,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--num_generations", type=int, default=10)
     return parser.parse_args()
 
+
 def _resolve_db_path(results_dir: Path, db_path: Optional[str]) -> Path:
     """DB パスを決める。
 
@@ -110,11 +113,13 @@ def _resolve_db_path(results_dir: Path, db_path: Optional[str]) -> Path:
         return Path(db_path)
     return results_dir / "evolution_db_oss120b_large_q200.sqlite"
 
+
 def _resolve_data_path(data_path: Optional[str]) -> str:
     """ESCI-data のルートディレクトリを決める。"""
     if data_path:
         return str(data_path)
     return os.environ.get("ESCI_DATA_PATH", DEFAULT_DATA_PATH)
+
 
 def _build_job_config(*, data_path: str, esci_split: str) -> LocalJobConfig:
     """評価ジョブの設定を作る（evaluate.py + ESCI 設定）。"""
@@ -134,6 +139,7 @@ def _build_job_config(*, data_path: str, esci_split: str) -> LocalJobConfig:
         },
     )
 
+
 def _build_db_config(db_path: Path) -> DatabaseConfig:
     """進化 DB（SQLite）の設定を作る。"""
     return DatabaseConfig(
@@ -149,6 +155,7 @@ def _build_db_config(db_path: Path) -> DatabaseConfig:
         parent_selection_strategy="weighted",
         parent_selection_lambda=10.0,
     )
+
 
 def _build_evo_config(
     *,
@@ -176,6 +183,7 @@ def _build_evo_config(
         init_program_path=str(Path(init_program_path)),
         results_dir=str(results_dir),
     )
+
 
 def main() -> None:
     """CLI エントリポイント。"""
@@ -206,7 +214,6 @@ def main() -> None:
     )
     runner.run()
 
+
 if __name__ == "__main__":
     main()
-
-```

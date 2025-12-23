@@ -78,7 +78,7 @@ def _tf_jaccard(q_tokens: Tokens, p_tokens: Tokens) -> float:
 
     inter = 0.0
     union = 0.0
-    for tok in (set(q_tf) | set(p_tf)):
+    for tok in set(q_tf) | set(p_tf):
         inter += float(min(q_tf.get(tok, 0), p_tf.get(tok, 0)))
         union += float(max(q_tf.get(tok, 0), p_tf.get(tok, 0)))
 
